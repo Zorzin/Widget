@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Data;
 using System.Linq;
 using System.Text;
@@ -25,58 +26,111 @@ namespace Widget
     public partial class MainWindow : Window
     {
         private int licznik;
-
-        private void Refresh()
-        {
-            DBConnect connect = new DBConnect();
-            DataTable dt =
-                connect.selectQuery(
-                    "SELECT linia, godzina, minuta from WIDGETTABLE where strftime('%H','now','localtime') = godzina"); //sortowanie po godzinie i minucie i wyswietlanie kolejno tam gdzie godzina >= aktualnej i mnut
-            for (int i = 0; i < 6; i++)
-            {
-                string godzina = dt.Rows[i]["godzina"].ToString();
-                string linia = dt.Rows[i]["linia"].ToString();
-                string minuta = dt.Rows[i]["minuta"].ToString();
-                string caly = godzina + " " + minuta + " " + linia;
-                Label label = new Label();
-                label.Content = caly;
-                label.Height = 50;
-                ListBox.Items[i] = label;
-            }
-        }
+        private Collection<Odjazd> lista;
+        private string day;
+        private string nextday;
 
         public MainWindow()
-        {
+        {   lista = new ObservableCollection<Odjazd>();
             InitializeComponent();
-            Refresh();
+            var dday = DateTime.Now.DayOfWeek;
+            switch (dday)
+            {
+                case DayOfWeek.Friday:
+                    day = "roboczy";
+                    nextday = "sobota";
+                    break;
+                case DayOfWeek.Saturday:
+                    day = "sobota";
+                    nextday = "niedziela";
+                    break;
+                case DayOfWeek.Sunday:
+                    day = "niedziela";
+                    nextday = "roboczy";
+                    break;
+                default:
+                    day = "roboczy";
+                    nextday = "roboczy";
+                    break;
+            }
+            ListBox.ItemsSource = lista;
+            licznik = 0;
+            RefreshList();
             DispatcherTimer timer = new DispatcherTimer();
             
             timer.Tick += new EventHandler(Refresh);
             timer.Interval = TimeSpan.FromSeconds(10);
             timer.Start();
-            licznik = 0;
+            
 
         }
+        private void RefreshList()
+        {
+            lista.Clear();
+            DBConnect connect = new DBConnect();
+            DataTable dt =
+                connect.selectQuery(
+                    "SELECT w.linia, w.odjazd,w.dzien,w.oznaczenie,w.kierunek from WIDGETTABLE w where strftime('%H:%M','now','localtime') < odjazd and dzien = '" + day+"' group by w.odjazd");
+            int il_item;
 
+            switch (licznik)
+            {
+                case 1:
+                    il_item = 12;
+                    break;
+                case 2:
+                    il_item = 18;
+                    break;
+                default:
+                    il_item = 6;
+                    break;
+            }
+            int polnoc = -1;
+            int ktory;
+            for (int i = 0; i < il_item; i++)
+            {
+                ktory = i;
+                var odjazd = new Odjazd();
+                if (i >= dt.Rows.Count)
+                {
+                    dt =
+                connect.selectQuery(
+                    "SELECT w.linia, w.odjazd,w.dzien,w.oznaczenie,w.kierunek from WIDGETTABLE w where w.dzien='" + nextday + "' group by w.odjazd");
+                    ktory=++polnoc;
+
+                }
+
+                odjazd.Linia = Int32.Parse(dt.Rows[ktory]["linia"].ToString());
+                odjazd.Godzina = dt.Rows[ktory]["odjazd"].ToString();
+                odjazd.Kierunek = dt.Rows[ktory]["kierunek"].ToString();
+                odjazd.Dzien = dt.Rows[ktory]["dzien"].ToString();
+                odjazd.Oznaczenie = dt.Rows[ktory]["oznaczenie"].ToString();
+
+                if (odjazd.Oznaczenie != "")
+                {
+                    DataTable dt2 = connect.selectQuery(
+                "SELECT opis from Legenda where linia = " + odjazd.Linia + " and oznaczenie = '" + odjazd.Oznaczenie + "'");
+                    odjazd.Legenda = dt2.Rows[0]["opis"].ToString();
+                }
+                lista.Add(odjazd);
+            }
+        }
         void Refresh(object sender, EventArgs e)
         {
-            Refresh();
-        }
-
-        static void SetValue(ListBoxItem list)
-        {
-            
+            RefreshList();
         }
 
         private void RozwinButton_Click(object sender, RoutedEventArgs e)
         {
-            if (licznik < 1)
+            if (licznik < 2)
             {
                 licznik ++;
-                for (int i = 0; i < 6; i++)
+                if (licznik == 2)
                 {
-                    ListBox.Items.Add(new ListBoxItem());
+                    RozwinButton.IsEnabled = false;
                 }
+                RefreshList();
+                
             }
         }
     }
